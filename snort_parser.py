@@ -1,6 +1,7 @@
 import ply.lex as lex
 import ply.yacc as yacc
-
+from ply.yacc import YaccProduction
+from ply.lex import LexToken
 
 class Parser:
     # List of token names. This is always required
@@ -8,17 +9,15 @@ class Parser:
     def __init__(self):
         self.lexer = lex.lex(module=self)
         self.parser = yacc.yacc(module=self)
+        self.rules = list()
+        self.string = ""
 
     def _add_token(self, token):
         print(token)
 
     def parse_rule(self, input_string):
-        self.lexer.input(input_string)
-        while True:
-            result = self.parser.parse(input_string)
-            if not input_string:
-                break
-            print(result)
+        result = self.parser.parse(input_string, lexer=self.lexer)
+        print(result)
 
     def lex_string(self, input_string):
         self.lexer.input(input_string)
@@ -47,33 +46,7 @@ class Parser:
     reserved = {
 
     }
-    #reserved = {
-    #    'msg': 'MSG',
-    #    'logto': 'LOGTO',
-    #    'ttl': 'TTL',
-    #    'tos': 'TOS',
-    #    'ipoption': 'IPOPTION',
-    ##    'fragbits': 'FRAGBITS',
-    ##    'dsize': 'DSIZE',
-    #    'content': 'CONTENT',
-    #    'offset': 'OFFSET',
-    #    'depth': 'DEPTH',
-    #    'nocase': 'NOCASE',
-    #    'flags': 'FLAGS',
-    #    'seq': 'SEQ',
-    #    'ack': 'ACK',
-    #    'itype': 'ITYPE',
-    #    'icode': 'ICODE',
-    #    'session': 'SESSION',
-    #    'icmp_id': 'ICMP_ID',
-    #    'icmp_seq': 'ICMP_SEQ',
-    #    'ipoption': 'IPOPTION',
-    #    'rpc': 'RPC',
-    #    'resp': 'RESP',
-    #    'content_list': 'CONTENT_LIST',
-    #    'react': 'REACT'
-    #}
-
+    
     tokens = tokens + list(reserved.values())
 
     # Regular expression rules for simple tokens
@@ -92,29 +65,29 @@ class Parser:
 
     # Define a rule so we can track line numbers
     @staticmethod
-    def t_newline(t):
+    def t_newline(t: LexToken):
         r'\n+'
         t.lexer.lineno += len(t.value)
 
     # Error handling rule
     @staticmethod
-    def t_error(t):
+    def t_error(t: LexToken):
         print("Illegal character '%s'" % t.value[0])
         t.lexer.skip(1)
     
-    def t_ACTION(self, t):
+    def t_ACTION(self, t: LexToken):
         r'(alert|log|pass|activate|dynamic)'
         return t
     
-    def t_PROTOCOL(self, t):
+    def t_PROTOCOL(self, t: LexToken):
         r'(tcp|udp|icmp)'
         return t
 
-    def t_OPTION(self, t):
+    def t_OPTION(self, t: LexToken):
         r'(msg|logto|ttl|tos|ipoption|fragbits|dsize|content|offset|depth|nocase|flags|seq|ack|itype|icode|session|icmp_id|icmp_seq|rpc|resp|content_list|react)'
         return t
 
-    def t_ID(self, t):
+    def t_ID(self, t: LexToken):
         r'[a-zA-Z_][a-zA-Z_0-9.]*' 
         t.type = self.reserved.get(t.value, 'ID')
         return t
@@ -122,74 +95,52 @@ class Parser:
     # Parsing rules
 
     @staticmethod
-    def p_rules(p):
+    def p_rules(p: YaccProduction):
         '''rules : rules rule
                  | rule'''
         
-    @staticmethod
-    def p_rule(p):
-        '''rule : ACTION PROTOCOL IP PORT DIRECTION IP PORT LPAREN options RPAREN'''
+        p[0] = p[1]
         
+    @staticmethod
+    def p_rule(p: YaccProduction):
+        '''rule : ACTION PROTOCOL IP PORT DIRECTION IP PORT LPAREN options RPAREN'''
+        p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9] + p[10]
 
     @staticmethod
-    def p_options(p):
+    def p_options(p: YaccProduction):
         '''options : options option
                    | option'''
+        p[0] = p[1]
         
-
     @staticmethod
-    def p_option(p):
+    def p_option(p: YaccProduction):
         '''option :  OPTION COLON STRING_ESCAPE expression STRING_ESCAPE SEMICOLON'''
         p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6]
-        print('OPTION:', p[0])
+        #print('OPTION:', p[0])
 
-    @staticmethod
-    def p_expression(p):
+    
+    def p_expression(self, p : YaccProduction):
         '''expression : expression term
                       | term'''
-        p[0] = p[1]
+        p[0] = self.string
     
-    @staticmethod
-    def p_term(p):
-        '''term : ID'''
-        p[0] = p[1]
-        print('TERM:', p[0])
+    def p_term(self, p: YaccProduction):
+        '''term : term ID
+                | ID'''
+        if len(p) > 2:
+            p[0] = p[2]
+            self.string += p[0]
+        else:
+            p[0] = p[1]
+            self.string += p[0]
 
-
-    #@staticmethod
-    #def p_term(p):
-    #    '''term : MSG
-    #            | LOGTO
-    #            | TTL
-    #            | TOS
-    #            | IPOPTION
-    #            | FRAGBITS
-    #            | DSIZE
-    #            | CONTENT
-    #            | OFFSET
-    #            | DEPTH
-    #            | NOCASE
-    #            | FLAGS
-    #            | SEQ
-    #            | ACK
-    #            | ITYPE
-    ###            | ICODE
-    #            | SESSION
-    #            | ICMP_ID
-    #            | ICMP_SEQ
-    #            | RPC
-    #            | RESP
-    #            | CONTENT_LIST
-    #            | REACT'''
-    #    
-    
     # Error rule for syntax errors
     def p_error(self, p):
         message = 'Unknown text {} for token of type {} on line {}'.format(p.value, p.type, p.lineno)
-        raise TypeError(message, p.lineno, p.lexpos)
+        raise SyntaxError(message, p.lineno, p.lexpos)
 
-#data = 'alert tcp 192.168.1.0 22 -> 192.168.1.1 80 (msg:"Test rule"; content:"Test content")'
-data = 'alert tcp 192.168.1.0 22 -> 192.168.1.1 80 (msg:"Test rule";)'
+#data = 'alert tcp 192.168.1.0 22 -> 192.168.1.1 80 (msg:"Test rule"; content:"Test content";    )'
+data = 'alert tcp 192.168.1.0 22 -> 192.168.1.1 80 (msg:"Test rule banana lol idk whats going on";)'
 parser = Parser()
 parser.parse_rule(input_string=data)
 #parser.lex_string(input_string=data)
