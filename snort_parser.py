@@ -10,7 +10,8 @@ class Parser:
         self.lexer = lex.lex(module=self)
         self.parser = yacc.yacc(module=self)
         self.rules = list()
-        self.string = ""
+        self.options = ""
+        self.option_string = ""
 
     def _add_token(self, token):
         print(token)
@@ -44,7 +45,7 @@ class Parser:
 
 
     reserved = {
-
+        
     }
     
     tokens = tokens + list(reserved.values())
@@ -94,6 +95,12 @@ class Parser:
 
     # Parsing rules
 
+        # Parsing rules
+    precedence = (
+        ('right', 'ID', ),
+        ('right', 'OPTION',)
+    )
+
     @staticmethod
     def p_rules(p: YaccProduction):
         '''rules : rules rule
@@ -101,46 +108,43 @@ class Parser:
         
         p[0] = p[1]
         
-    @staticmethod
-    def p_rule(p: YaccProduction):
+    
+    def p_rule(self, p: YaccProduction):
         '''rule : ACTION PROTOCOL IP PORT DIRECTION IP PORT LPAREN options RPAREN'''
         p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9] + p[10]
+        self.options = "" 
+    
 
-    @staticmethod
-    def p_options(p: YaccProduction):
+    def p_options(self, p: YaccProduction):
         '''options : options option
                    | option'''
-        p[0] = p[1]
+        p[0] = self.options
         
-    @staticmethod
-    def p_option(p: YaccProduction):
+    def p_option(self, p: YaccProduction):
         '''option :  OPTION COLON STRING_ESCAPE expression STRING_ESCAPE SEMICOLON'''
         p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6]
-        #print('OPTION:', p[0])
-
+        self.options += p[0]
+        self.option_string = ""
     
     def p_expression(self, p : YaccProduction):
         '''expression : expression term
                       | term'''
-        p[0] = self.string
+        p[0] = self.option_string
+        
     
     def p_term(self, p: YaccProduction):
-        '''term : term ID
-                | ID'''
-        if len(p) > 2:
-            p[0] = p[2]
-            self.string += p[0]
-        else:
-            p[0] = p[1]
-            self.string += p[0]
+        '''term : ID
+                | OPTION'''
+        p[0] = p[1]
+        self.option_string += p[0]
 
     # Error rule for syntax errors
     def p_error(self, p):
         message = 'Unknown text {} for token of type {} on line {}'.format(p.value, p.type, p.lineno)
         raise SyntaxError(message, p.lineno, p.lexpos)
 
-#data = 'alert tcp 192.168.1.0 22 -> 192.168.1.1 80 (msg:"Test rule"; content:"Test content";    )'
-data = 'alert tcp 192.168.1.0 22 -> 192.168.1.1 80 (msg:"Test rule banana lol idk whats going on";)'
+#data = 'alert tcp 192.168.1.0 22 -> 192.168.1.1 80 (msg:"Test rule"; content:"Test content whats going on here";)'
+data = 'alert tcp 192.168.1.0 22 -> 192.168.1.1 80 (msg:"Test rule banana lol idk whats going on"; content:"hacking";)'
 parser = Parser()
 parser.parse_rule(input_string=data)
 #parser.lex_string(input_string=data)
