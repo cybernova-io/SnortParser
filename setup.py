@@ -9,7 +9,7 @@ def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
 setup(
-    name = "SnortParser",
+    name = "SRParser",
     version = "0.0.1",
     author = "Joshua Brawner",
     author_email = "jrbbrawner@gmail.com",
@@ -18,7 +18,7 @@ setup(
     keywords = "snort rule parser",
     long_description_content_type = 'text/markdown',
     url = "https://www.github.com/jrbrawner/SnortParser",
-    packages=['SnortParser'],
+    packages=['SRParser'],
     long_description=read('README.md'),
     classifiers=[
         "Development Status :: 3 - Alpha",

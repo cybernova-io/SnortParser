@@ -44,7 +44,7 @@ class SnortParser:
         if console_logging:
             self._set_logging()
 
-    def parse_rule(self, input_string: str):
+    def parse_rules(self, input_string: str):
         result = self.parser.parse(input_string, lexer=self.lexer)
         return self.rules
 
