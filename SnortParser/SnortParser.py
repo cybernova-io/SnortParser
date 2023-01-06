@@ -32,7 +32,7 @@ class SnortRule:
         self.body_options = body_options
 
 
-class Parser:
+class SnortParser:
     def __init__(self, console_logging=False):
         self.lexer = lex.lex(module=self)
         self.parser = yacc.yacc(module=self, outputdir=tempfile.gettempdir())
@@ -86,7 +86,10 @@ class Parser:
         "DOT",
         "SLASH",
         "BSLASH",
-        "EQUALS"
+        "EQUALS",
+        "LBRACK",
+        "RBRACK",
+        "COMMA",
     ]
 
     reserved = {"any": "ANY", "EXTERNAL_NET": "EXTERNAL_NET", "HOME_NET": "HOME_NET"}
@@ -100,14 +103,17 @@ class Parser:
     t_COLON = r"\:"
     t_STRING_ESCAPE = r"\""
     t_SEMICOLON = r"\;"
-    t_PIPE = r'\|'
-    t_DOLLAR = r'\$'
-    t_EXCLAMATION = r'!'
-    t_HYPHEN = r'\-'
-    t_DOT = r'\.'
-    t_SLASH = r'\/'
-    t_EQUALS = r'\='
-    t_BSLASH = r'\\'
+    t_PIPE = r"\|"
+    t_DOLLAR = r"\$"
+    t_EXCLAMATION = r"!"
+    t_HYPHEN = r"\-"
+    t_DOT = r"\."
+    t_SLASH = r"\/"
+    t_EQUALS = r"\="
+    t_BSLASH = r"\\"
+    t_LBRACK = r"\["
+    t_RBRACK = r"\]"
+    t_COMMA = r"\,"
 
     # A string containing ignored characters (spaces and tabs)
     t_ignore = " \t"
@@ -181,7 +187,7 @@ class Parser:
     @staticmethod
     def p_rules(p: YaccProduction):
         """rules : rules rule
-                 | rule"""
+        | rule"""
         if len(p) == 3:
             # multiple rules parsed
             p[0] = p[1] + "\n" + p[2]
@@ -203,7 +209,7 @@ class Parser:
             body_string=p[9],
             body_options=self.body_options,
         )
-        
+
         logger.info(f"Rule matched: {snort_rule.__dict__}")
         self.rules.append(snort_rule)
         self.options = ""
@@ -212,13 +218,12 @@ class Parser:
 
     def p_body(self, p: YaccProduction):
         """body : body option
-                | option"""
+        | option"""
         p[0] = self.options
-        
 
     def p_option(self, p: YaccProduction):
         """option : OPTION COLON expression SEMICOLON"""
-        
+
         p[0] = p[1] + p[2] + p[3] + p[4]
         option_kvp = {p[1]: p[3]}
         self.body_options.append(option_kvp)
@@ -227,39 +232,39 @@ class Parser:
 
     def p_expression(self, p: YaccProduction):
         """expression : expression term
-                      | term"""
+        | term"""
         p[0] = self.body_string
-        
 
     def p_term(self, p: YaccProduction):
         # matches all the text inside of "" for an option
         """term : ID
-                | OPTION
-                | PIPE
-                | NUMBER
-                | DOLLAR
-                | COLON
-                | HYPHEN
-                | DOT
-                | SLASH
-                | EQUALS
-                | BSLASH
-                | STRING_ESCAPE
-                | EXCLAMATION
-                | LPAREN
-                | RPAREN"""
+        | OPTION
+        | PIPE
+        | NUMBER
+        | DOLLAR
+        | COLON
+        | HYPHEN
+        | DOT
+        | SLASH
+        | EQUALS
+        | BSLASH
+        | STRING_ESCAPE
+        | EXCLAMATION
+        | LPAREN
+        | RPAREN
+        | COMMA"""
         p[0] = p[1]
         self.body_string += p[0]
-        
 
     @staticmethod
     def p_ip(p: YaccProduction):
         """ip : IP
-              | IP SLASH NUMBER
-              | ANY
-              | DOLLAR HOME_NET
-              | DOLLAR EXTERNAL_NET"""
-        
+        | IP SLASH NUMBER
+        | ANY
+        | DOLLAR HOME_NET
+        | DOLLAR EXTERNAL_NET
+        | LBRACK list RBRACK"""
+
         if len(p) == 4:
             p[0] = p[1] + p[2] + p[3]
             return p[0]
@@ -271,14 +276,15 @@ class Parser:
     @staticmethod
     def p_port(p: YaccProduction):
         """port : NUMBER
-                | ANY
-                | NUMBER COLON NUMBER
-                | COLON NUMBER
-                | NUMBER COLON
-                | EXCLAMATION NUMBER
-                | EXCLAMATION NUMBER COLON NUMBER
-                | EXCLAMATION COLON NUMBER
-                | EXCLAMATION NUMBER COLON"""
+        | ANY
+        | NUMBER COLON NUMBER
+        | COLON NUMBER
+        | NUMBER COLON
+        | EXCLAMATION NUMBER
+        | EXCLAMATION NUMBER COLON NUMBER
+        | EXCLAMATION COLON NUMBER
+        | EXCLAMATION NUMBER COLON
+        | LBRACK list RBRACK"""
         if len(p) == 5:
             p[0] = p[1] + p[2] + p[3] + p[4]
             return p[0]
@@ -290,6 +296,26 @@ class Parser:
             return p[0]
         p[0] = p[1]
 
+    @staticmethod
+    def p_list(p: YaccProduction):
+        """list : list item
+        | item"""
+        if len(p) == 3:
+            p[0] = p[1] + p[2]
+            return p[0]
+        p[0] = p[1]
+
+    @staticmethod
+    def p_item(p: YaccProduction):
+        """item : IP
+        | COMMA
+        | NUMBER
+        | SLASH
+        | COLON
+        | DOLLAR
+        | ID"""
+        p[0] = p[1]
+
     # Error rule for syntax errors
     def p_error(self, p: YaccProduction):
         message = (
@@ -298,12 +324,3 @@ class Parser:
             )
         )
         raise SyntaxError(message, p.lineno, p.lexpos)
-
-
-basic_rule = 'alert tcp 192.168.1.0/24 22 -> 192.168.1.1/24 80 (msg:"Test rule banana lol idk whats going on"; content:"hacking";)'
-
-parser = Parser()
-rules = parser.parse_rule(input_string=basic_rule)
-#parser.lex_string(input_string=basic_rule)
-for i in rules:
-    print(i.__dict__)
