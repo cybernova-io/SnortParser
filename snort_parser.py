@@ -19,7 +19,7 @@ class SnortRule:
         dest_ip,
         dest_port,
         body_string,
-        body_dict,
+        body_options,
     ):
         self.action = action
         self.protocol = protocol
@@ -29,7 +29,7 @@ class SnortRule:
         self.dest_ip = dest_ip
         self.dest_port = dest_port
         self.body_string = body_string
-        self.body_dict = body_dict
+        self.body_options = body_options
 
 
 class Parser:
@@ -39,7 +39,7 @@ class Parser:
         self.rules = list()
         self.options = ""
         self.body_string = ""
-        self.body_dict = dict()
+        self.body_options = list()
 
         if console_logging:
             self._set_logging()
@@ -54,8 +54,6 @@ class Parser:
             tok = self.lexer.token()
             if not tok:
                 break
-            #if tok.lexpos > 400:
-            #    break
             print(tok)
 
     @staticmethod
@@ -149,11 +147,8 @@ class Parser:
             |iec104_asdu_func|modbus_data|modbus_func|modbus_unit|s7commplus_content|\
             |s7commplus_func|s7commplus_opcode|fragoffset|ttl|tos|id|ipopts|fragbits|\
             |ip_proto|flags|flow|flowbits|file_type|seq|ack|window|itype|icode|icmp_id|\
-            |icmp_seq|rpc|stream_reassemble|stream_size|detection_filter|replace|tag)"
-        #modifiers
-        #fast_pattern, nocase, offset, depth, distance, within
-        #http specific options
-        #http_uri, http_raw_uri, http_header, http_raw_header, http_cookie, http_raw_cookie, etc...
+            |icmp_seq|rpc|stream_reassemble|stream_size|detection_filter|replace|tag|\
+            |offset|depth|within|distance|filename)"
         return t
 
     @staticmethod
@@ -206,14 +201,14 @@ class Parser:
             dest_ip=p[6],
             dest_port=p[7],
             body_string=p[9],
-            body_dict=self.body_dict,
+            body_options=self.body_options,
         )
         
         logger.info(f"Rule matched: {snort_rule.__dict__}")
         self.rules.append(snort_rule)
         self.options = ""
         self.body_string = ""
-        self.body_dict = dict()
+        self.body_options = list()
 
     def p_body(self, p: YaccProduction):
         """body : body option
@@ -222,24 +217,12 @@ class Parser:
         
 
     def p_option(self, p: YaccProduction):
-        # matches an option specification, format can change depending on option
-        """option : OPTION COLON STRING_ESCAPE expression STRING_ESCAPE SEMICOLON
-                  | OPTION COLON NUMBER SEMICOLON
-                  | OPTION COLON EXCLAMATION STRING_ESCAPE expression STRING_ESCAPE SEMICOLON"""
+        """option : OPTION COLON expression SEMICOLON"""
         
-        if len(p) == 7:
-            #content option can have an ! before the string_escape
-            p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6]
-            self.body_dict.update({p[1]: p[5]})
-            self.body_string = ""
-        if len(p) == 5:
-            p[0] = p[1] + p[2] + p[3] + p[4]
-            self.body_dict.update({p[1]: p[3]})
-            self.body_string = ""
-        else:
-            p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6]
-            self.body_dict.update({p[1]: p[4]})
-            self.body_string = ""
+        p[0] = p[1] + p[2] + p[3] + p[4]
+        option_kvp = {p[1]: p[3]}
+        self.body_options.append(option_kvp)
+        self.body_string = ""
         self.options += p[0]
 
     def p_expression(self, p: YaccProduction):
@@ -261,9 +244,13 @@ class Parser:
                 | SLASH
                 | EQUALS
                 | BSLASH
-                | STRING_ESCAPE"""
+                | STRING_ESCAPE
+                | EXCLAMATION
+                | LPAREN
+                | RPAREN"""
         p[0] = p[1]
         self.body_string += p[0]
+        
 
     @staticmethod
     def p_ip(p: YaccProduction):
