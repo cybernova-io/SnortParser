@@ -18,8 +18,8 @@ class SnortRule:
         direction,
         dest_ip,
         dest_port,
-        options_string,
-        options_dict,
+        body_string,
+        body_dict,
     ):
         self.action = action
         self.protocol = protocol
@@ -28,8 +28,8 @@ class SnortRule:
         self.direction = direction
         self.dest_ip = dest_ip
         self.dest_port = dest_port
-        self.options_string = options_string
-        self.options_dict = options_dict
+        self.body_string = body_string
+        self.body_dict = body_dict
 
 
 class Parser:
@@ -38,8 +38,8 @@ class Parser:
         self.parser = yacc.yacc(module=self, outputdir=tempfile.gettempdir())
         self.rules = list()
         self.options = ""
-        self.option_string = ""
-        self.options_dict = dict()
+        self.body_string = ""
+        self.body_dict = dict()
 
         if console_logging:
             self._set_logging()
@@ -84,7 +84,11 @@ class Parser:
         "PIPE",
         "DOLLAR",
         "EXCLAMATION",
-        "HYPHEN"
+        "HYPHEN",
+        "DOT",
+        "SLASH",
+        "BSLASH",
+        "EQUALS"
     ]
 
     reserved = {"any": "ANY", "EXTERNAL_NET": "EXTERNAL_NET", "HOME_NET": "HOME_NET"}
@@ -98,10 +102,14 @@ class Parser:
     t_COLON = r"\:"
     t_STRING_ESCAPE = r"\""
     t_SEMICOLON = r"\;"
-    t_PIPE = r"\|"
-    t_DOLLAR = r"\$"
-    t_EXCLAMATION = r'\!'
+    t_PIPE = r'\|'
+    t_DOLLAR = r'\$'
+    t_EXCLAMATION = r'!'
     t_HYPHEN = r'\-'
+    t_DOT = r'\.'
+    t_SLASH = r'\/'
+    t_EQUALS = r'\='
+    t_BSLASH = r'\\'
 
     # A string containing ignored characters (spaces and tabs)
     t_ignore = " \t"
@@ -120,18 +128,32 @@ class Parser:
 
     @staticmethod
     def t_ACTION(t: LexToken):
-        r"(alert|log|pass|activate|dynamic)"
+        r"(alert|block|drop|log|pass|react|reject|rewrite)"
         return t
 
     @staticmethod
     def t_PROTOCOL(t: LexToken):
-        r"(tcp|udp|icmp)"
+        r"(ip|tcp|udp|icmp)"
         return t
 
     @staticmethod
     def t_OPTION(t: LexToken):
-        r"(msg|logto|ttl|tos|ipoption|fragbits|dsize|content|offset|depth|nocase|flags|seq|ack|itype|\
-            icode|session|icmp_id|icmp_seq|rpc|resp|content_list|react|distance|within|hash|length|rawbytes|sid|rev)"
+        r"(msg|reference|gid|sid|rev|classtype|priority|metadata|service|rem|file_meta|\
+            |content|bufferlen|isdataat|dsize|pcre|regex|pkt_data|raw_data|file_data|\
+            |js_data|base64_decode|base64_data|byte_extract|byte_test|byte_math|ber_data|\
+            |ber_skip|ssl_state|ssl_version|dce_iface|dce_opnum|dce_stub_data|sip_method|\
+            |sip_method|sip_header|sip_body|sip_stat_code|sd_pattern|asn1|cvs|md5|sha256|\
+            |sha512|gtp_info|gtp_type|gtp_version|dnp3_func|dnp3_ind|dnp3_obj|dnp3_data|\
+            |cip_attribute|cip_class|cip_conn_path_class|cip_instance|cip_req|cip_rsp|\
+            |cip_service|cip_status|enip_command|enip_req|enip_rsp|iec104_apci_type|\
+            |iec104_asdu_func|modbus_data|modbus_func|modbus_unit|s7commplus_content|\
+            |s7commplus_func|s7commplus_opcode|fragoffset|ttl|tos|id|ipopts|fragbits|\
+            |ip_proto|flags|flow|flowbits|file_type|seq|ack|window|itype|icode|icmp_id|\
+            |icmp_seq|rpc|stream_reassemble|stream_size|detection_filter|replace|tag)"
+        #modifiers
+        #fast_pattern, nocase, offset, depth, distance, within
+        #http specific options
+        #http_uri, http_raw_uri, http_header, http_raw_header, http_cookie, http_raw_cookie, etc...
         return t
 
     @staticmethod
@@ -173,7 +195,7 @@ class Parser:
             p[0] = p[1]
 
     def p_rule(self, p: YaccProduction):
-        """rule : ACTION PROTOCOL ip port DIRECTION ip port LPAREN options RPAREN"""
+        """rule : ACTION PROTOCOL ip port DIRECTION ip port LPAREN body RPAREN"""
         p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9] + p[10]
         snort_rule = SnortRule(
             action=p[1],
@@ -183,18 +205,21 @@ class Parser:
             direction=p[5],
             dest_ip=p[6],
             dest_port=p[7],
-            options_string=p[9],
-            options_dict=self.options_dict,
+            body_string=p[9],
+            body_dict=self.body_dict,
         )
+        
         logger.info(f"Rule matched: {snort_rule.__dict__}")
         self.rules.append(snort_rule)
         self.options = ""
-        self.options_dict = dict()
+        self.body_string = ""
+        self.body_dict = dict()
 
-    def p_options(self, p: YaccProduction):
-        """options : options option
-                   | option"""
+    def p_body(self, p: YaccProduction):
+        """body : body option
+                | option"""
         p[0] = self.options
+        
 
     def p_option(self, p: YaccProduction):
         # matches an option specification, format can change depending on option
@@ -205,24 +230,23 @@ class Parser:
         if len(p) == 7:
             #content option can have an ! before the string_escape
             p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6]
-            self.options += p[0]
-            self.options_dict.update({p[1]: p[5]})
-            self.option_string = ""
+            self.body_dict.update({p[1]: p[5]})
+            self.body_string = ""
         if len(p) == 5:
             p[0] = p[1] + p[2] + p[3] + p[4]
-            self.options += p[0]
-            self.options_dict.update({p[1]: p[3]})
-            self.option_string = ""
+            self.body_dict.update({p[1]: p[3]})
+            self.body_string = ""
         else:
             p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6]
-            self.options += p[0]
-            self.options_dict.update({p[1]: p[4]})
-            self.option_string = ""
+            self.body_dict.update({p[1]: p[4]})
+            self.body_string = ""
+        self.options += p[0]
 
     def p_expression(self, p: YaccProduction):
         """expression : expression term
                       | term"""
-        p[0] = self.option_string
+        p[0] = self.body_string
+        
 
     def p_term(self, p: YaccProduction):
         # matches all the text inside of "" for an option
@@ -232,25 +256,51 @@ class Parser:
                 | NUMBER
                 | DOLLAR
                 | COLON
-                | HYPHEN"""
+                | HYPHEN
+                | DOT
+                | SLASH
+                | EQUALS
+                | BSLASH
+                | STRING_ESCAPE"""
         p[0] = p[1]
-        self.option_string += p[0]
+        self.body_string += p[0]
 
     @staticmethod
     def p_ip(p: YaccProduction):
         """ip : IP
+              | IP SLASH NUMBER
               | ANY
               | DOLLAR HOME_NET
               | DOLLAR EXTERNAL_NET"""
+        
+        if len(p) == 4:
+            p[0] = p[1] + p[2] + p[3]
+            return p[0]
         if len(p) == 3:
             p[0] = p[1] + p[2]
-        else:
-            p[0] = p[1]
+            return p[0]
+        p[0] = p[1]
 
     @staticmethod
     def p_port(p: YaccProduction):
         """port : NUMBER
-                | ANY"""
+                | ANY
+                | NUMBER COLON NUMBER
+                | COLON NUMBER
+                | NUMBER COLON
+                | EXCLAMATION NUMBER
+                | EXCLAMATION NUMBER COLON NUMBER
+                | EXCLAMATION COLON NUMBER
+                | EXCLAMATION NUMBER COLON"""
+        if len(p) == 5:
+            p[0] = p[1] + p[2] + p[3] + p[4]
+            return p[0]
+        if len(p) == 4:
+            p[0] = p[1] + p[2] + p[3]
+            return p[0]
+        if len(p) == 3:
+            p[0] = p[1] + p[2]
+            return p[0]
         p[0] = p[1]
 
     # Error rule for syntax errors
@@ -261,3 +311,12 @@ class Parser:
             )
         )
         raise SyntaxError(message, p.lineno, p.lexpos)
+
+
+basic_rule = 'alert tcp 192.168.1.0/24 22 -> 192.168.1.1/24 80 (msg:"Test rule banana lol idk whats going on"; content:"hacking";)'
+
+parser = Parser()
+rules = parser.parse_rule(input_string=basic_rule)
+#parser.lex_string(input_string=basic_rule)
+for i in rules:
+    print(i.__dict__)
