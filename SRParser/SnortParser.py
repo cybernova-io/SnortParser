@@ -30,25 +30,99 @@ class SnortRule:
         self.dest_port = dest_port
         self.body_string = body_string
         self.body_options = body_options
+        self.raw = ""
+
+    def raw_text(self):
+        """Take a SnortRule object and rebuild the raw text version."""
+        rule = (
+            self.action
+            + " "
+            + self.protocol
+            + " "
+            + self.source_ip
+            + " "
+            + self.source_port
+            + " "
+            + self.direction
+            + " "
+            + self.dest_ip
+            + " "
+            + self.dest_port
+            + " ("
+        )
+        for option in self.body_options:
+            rule += str(*option)
+            rule += ":"
+            rule += option.pop(*option)
+            rule += ";" + " "
+        rule = rule[:-1]
+        rule += ")"
+        self.raw = rule
+        return self.raw
 
 
 class SnortParser:
-    def __init__(self, console_logging=False):
-        self.lexer = lex.lex(module=self)
-        self.parser = yacc.yacc(module=self, outputdir=tempfile.gettempdir())
-        self.rules = list()
+    def __init__(self, console_logging=False, skip_error_rules=True):
+        self.lexer = lex.lex(module=self, debug=False)
+        self.parser = yacc.yacc(
+            module=self, debug=False, outputdir=tempfile.gettempdir()
+        )
         self.options = ""
         self.body_string = ""
         self.body_options = list()
+
+        self.rules = list()
+
+        self.error_log = list()
+        self.skip_error_rules = skip_error_rules
 
         if console_logging:
             self._set_logging()
 
     def parse_rules(self, input_string: str):
-        result = self.parser.parse(input_string, lexer=self.lexer)
+        """Parse an input string expected to contain snort rules."""
+        self.parser.parse(input_string, lexer=self.lexer)
         return self.rules
 
-    def lex_string(self, input_string: str):
+    def rebuild_rule(
+        self,
+        action: str,
+        protocol: str,
+        source_ip: str,
+        source_port: str,
+        direction: str,
+        dest_ip: str,
+        dest_port: str,
+        body_options: list,
+    ):
+        """Take components of a snort rule and rebuild it into the raw text."""
+        rule = ""
+        rule = (
+            action
+            + " "
+            + protocol
+            + " "
+            + source_ip
+            + " "
+            + source_port
+            + " "
+            + direction
+            + " "
+            + dest_ip
+            + " "
+            + dest_port
+            + " ("
+        )
+        for option in body_options:
+            rule += str(*option)
+            rule += ":"
+            rule += option.pop(*option)
+            rule += ";" + " "
+        rule = rule[:-1]
+        rule += ")"
+        return rule
+
+    def __lex_string(self, input_string: str):
         self.lexer.input(input_string)
         while True:
             tok = self.lexer.token()
@@ -57,13 +131,13 @@ class SnortParser:
             print(tok)
 
     @staticmethod
-    def _set_logging():
+    def __set_logging():
         """Set the console logger only if handler(s) aren't already set."""
         if not len(logger.handlers):
             logger.setLevel(logging.DEBUG)
-            ch = logging.StreamHandler()
-            ch.setLevel(logging.DEBUG)
-            logger.addHandler(ch)
+            log = logging.StreamHandler()
+            log.setLevel(logging.DEBUG)
+            logger.addHandler(log)
 
     # List of token names. This is always required
     tokens = [
@@ -90,9 +164,24 @@ class SnortParser:
         "LBRACK",
         "RBRACK",
         "COMMA",
+        "LBRACE",
+        "RBRACE",
+        "GREATERTHAN",
+        "LESSTHAN",
+        "STAR",
+        "CARET",
+        "AND",
+        "QUESTION",
+        "PLUS",
+        "MODULO",
     ]
 
-    reserved = {"any": "ANY", "EXTERNAL_NET": "EXTERNAL_NET", "HOME_NET": "HOME_NET"}
+    reserved = {
+        "any": "ANY",
+        "EXTERNAL_NET": "EXTERNAL_NET",
+        "HOME_NET": "HOME_NET",
+        "HTTP_PORTS": "HTTP_PORTS",
+    }
 
     tokens = tokens + list(reserved.values())
 
@@ -114,6 +203,16 @@ class SnortParser:
     t_LBRACK = r"\["
     t_RBRACK = r"\]"
     t_COMMA = r"\,"
+    t_LBRACE = r"\{"
+    t_RBRACE = r"\}"
+    t_GREATERTHAN = r"\>"
+    t_LESSTHAN = r"\<"
+    t_STAR = r"\*"
+    t_CARET = r"\^"
+    t_AND = r"\&"
+    t_QUESTION = r"\?"
+    t_PLUS = r"\+"
+    t_MODULO = r"\%"
 
     # A string containing ignored characters (spaces and tabs)
     t_ignore = " \t"
@@ -154,7 +253,7 @@ class SnortParser:
             |s7commplus_func|s7commplus_opcode|fragoffset|ttl|tos|id|ipopts|fragbits|\
             |ip_proto|flags|flow|flowbits|file_type|seq|ack|window|itype|icode|icmp_id|\
             |icmp_seq|rpc|stream_reassemble|stream_size|detection_filter|replace|tag|\
-            |offset|depth|within|distance|filename)"
+            |offset|depth|within|distance|filename|charset|nocase|fast_pattern|protected_content)"
         return t
 
     @staticmethod
@@ -222,13 +321,20 @@ class SnortParser:
         p[0] = self.options
 
     def p_option(self, p: YaccProduction):
-        """option : OPTION COLON expression SEMICOLON"""
-
-        p[0] = p[1] + p[2] + p[3] + p[4]
-        option_kvp = {p[1]: p[3]}
-        self.body_options.append(option_kvp)
-        self.body_string = ""
-        self.options += p[0]
+        """option : OPTION COLON expression SEMICOLON
+        | OPTION SEMICOLON"""
+        if len(p) == 5:
+            p[0] = p[1] + p[2] + p[3] + p[4]
+            option_kvp = {p[1]: p[3]}
+            self.body_options.append(option_kvp)
+            self.body_string = ""
+            self.options += p[0]
+        if len(p) == 3:
+            p[0] = p[1] + p[2]
+            option_kvp = {p[1]: p[2]}
+            self.body_options.append(option_kvp)
+            self.body_string = ""
+            self.options += p[0]
 
     def p_expression(self, p: YaccProduction):
         """expression : expression term
@@ -236,9 +342,11 @@ class SnortParser:
         p[0] = self.body_string
 
     def p_term(self, p: YaccProduction):
-        # matches all the text inside of "" for an option
+        # matches all the text between : ; for an option
         """term : ID
         | OPTION
+        | ACTION
+        | PROTOCOL
         | PIPE
         | NUMBER
         | DOLLAR
@@ -252,9 +360,26 @@ class SnortParser:
         | EXCLAMATION
         | LPAREN
         | RPAREN
-        | COMMA"""
-        p[0] = p[1]
-        self.body_string += p[0]
+        | COMMA
+        | LBRACK
+        | RBRACK
+        | LBRACE
+        | RBRACE
+        | GREATERTHAN
+        | LESSTHAN
+        | STAR
+        | CARET
+        | AND
+        | QUESTION
+        | PLUS
+        | MODULO
+        | BSLASH SEMICOLON"""
+        if len(p) == 3:
+            p[0] = p[1] + p[2]
+            self.body_string += p[0]
+        else:
+            p[0] = p[1]
+            self.body_string += p[0]
 
     @staticmethod
     def p_ip(p: YaccProduction):
@@ -284,7 +409,8 @@ class SnortParser:
         | EXCLAMATION NUMBER COLON NUMBER
         | EXCLAMATION COLON NUMBER
         | EXCLAMATION NUMBER COLON
-        | LBRACK list RBRACK"""
+        | LBRACK list RBRACK
+        | DOLLAR HTTP_PORTS"""
         if len(p) == 5:
             p[0] = p[1] + p[2] + p[3] + p[4]
             return p[0]
@@ -318,9 +444,13 @@ class SnortParser:
 
     # Error rule for syntax errors
     def p_error(self, p: YaccProduction):
-        message = (
-            "Unknown text {} for token of type {} on line {} in position {}".format(
-                p.value, p.type, p.lineno, p.lexpos
-            )
+        message = "Unknown character {} for token of type {} on line {} in position {}".format(
+            p.value, p.type, p.lineno, p.lexpos
         )
-        raise SyntaxError(message, p.lineno, p.lexpos)
+
+        if self.skip_error_rules == True:
+            self.error_log.append(message)
+            p.lineno += 1
+            p.lexpos = 0
+        if self.skip_error_rules == False:
+            raise SyntaxError(message, p.lineno, p.lexpos)
