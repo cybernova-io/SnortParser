@@ -189,6 +189,7 @@ class SnortParser:
         "EXTERNAL_NET": "EXTERNAL_NET",
         "HOME_NET": "HOME_NET",
         "HTTP_PORTS": "HTTP_PORTS",
+        "SMTP_SERVERS": "SMTP_SERVERS"
     }
 
     tokens = tokens + list(reserved.values())
@@ -244,11 +245,6 @@ class SnortParser:
         return t
 
     @staticmethod
-    def t_PROTOCOL(t: LexToken):
-        r"(ip|tcp|udp|icmp)"
-        return t
-
-    @staticmethod
     def t_OPTION(t: LexToken):
         r"(msg|reference|gid|sid|rev|classtype|priority|metadata|service|rem|file_meta|\
             |content|bufferlen|isdataat|dsize|pcre|regex|pkt_data|raw_data|file_data|\
@@ -262,8 +258,15 @@ class SnortParser:
             |s7commplus_func|s7commplus_opcode|fragoffset|ttl|tos|id|ipopts|fragbits|\
             |ip_proto|flags|flowbits|flow|file_type|seq|ack|window|itype|icode|icmp_id|\
             |icmp_seq|rpc|stream_reassemble|stream_size|detection_filter|replace|tag|\
-            |offset|depth|within|distance|filename|charset|nocase|fast_pattern|protected_content)"
+            |offset|depth|within|distance|filename|charset|nocase|fast_pattern|protected_content|\
+            |ip_proto|byte_jump)"
         return t
+
+    @staticmethod
+    def t_PROTOCOL(t: LexToken):
+        r"(ip|tcp|udp|icmp)"
+        return t
+
 
     @staticmethod
     def t_IP(t: LexToken):
@@ -304,26 +307,44 @@ class SnortParser:
             p[0] = p[1]
 
     def p_rule(self, p: YaccProduction):
-        """rule : ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN body RPAREN"""
-        p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9] + p[10]
-        
-        snort_rule = SnortRule(
-            action=p[1],
-            protocol=p[3],
-            source_ip=p[5],
-            source_port=p[7],
-            direction=p[9],
-            dest_ip=p[11],
-            dest_port=p[13],
-            body_string=p[16],
-            body_options=self.body_options,
-        )
+        """rule : ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN body RPAREN
+                | ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN SPACE body SPACE RPAREN"""
+        if len(p) == 20:
+            snort_rule = SnortRule(
+                action=p[1],
+                protocol=p[3],
+                source_ip=p[5],
+                source_port=p[7],
+                direction=p[9],
+                dest_ip=p[11],
+                dest_port=p[13],
+                body_string=p[18],
+                body_options=self.body_options,
+            )
 
-        logger.info(f"Rule matched: {snort_rule.__dict__}")
-        self.rules.append(snort_rule)
-        self.options = ""
-        self.body_string = ""
-        self.body_options = list()
+            logger.info(f"Rule matched: {snort_rule.__dict__}")
+            self.rules.append(snort_rule)
+            self.options = ""
+            self.body_string = ""
+            self.body_options = list()
+        if len(p) == 18:
+            snort_rule = SnortRule(
+                action=p[1],
+                protocol=p[3],
+                source_ip=p[5],
+                source_port=p[7],
+                direction=p[9],
+                dest_ip=p[11],
+                dest_port=p[13],
+                body_string=p[16],
+                body_options=self.body_options,
+            )
+
+            logger.info(f"Rule matched: {snort_rule.__dict__}")
+            self.rules.append(snort_rule)
+            self.options = ""
+            self.body_string = ""
+            self.body_options = list()
 
     def p_body(self, p: YaccProduction):
         """body : body option
@@ -332,8 +353,9 @@ class SnortParser:
 
     def p_option(self, p: YaccProduction):
         """option : OPTION COLON expression SEMICOLON
-        | OPTION SEMICOLON
-        | OPTION COLON expression SEMICOLON SPACE"""
+                    | OPTION SEMICOLON
+                    | OPTION COLON expression SEMICOLON SPACE
+                    | OPTION SEMICOLON SPACE"""
         if len(p) == 6:
             p[0] = p[1] + p[2] + p[3] + p[4]
             option_kvp = {p[1]: p[3]}
@@ -342,6 +364,12 @@ class SnortParser:
             self.options += p[0]
         if len(p) == 5:
             p[0] = p[1] + p[2] + p[3] + p[4]
+            option_kvp = {p[1]: p[3]}
+            self.body_options.append(option_kvp)
+            self.body_string = ""
+            self.options += p[0]
+        if len(p) == 4:
+            p[0] = p[1] + p[2] + p[3]
             option_kvp = {p[1]: p[3]}
             self.body_options.append(option_kvp)
             self.body_string = ""
@@ -408,6 +436,7 @@ class SnortParser:
         | ANY
         | DOLLAR HOME_NET
         | DOLLAR EXTERNAL_NET
+        | DOLLAR SMTP_SERVERS
         | LBRACK list RBRACK"""
 
         if len(p) == 4:
