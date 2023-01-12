@@ -62,7 +62,14 @@ class SnortRule:
 
 
 class SnortParser:
-    def __init__(self, console_logging=False, skip_error_rules=True):
+    def __init__(self, console_logging=False, skip_error_rules=True, strict_mode=True):
+        """
+        Initialize parser.
+        Optional args -\n
+        console_logging: print logging information to console\n
+        skip_error_rules: whether to stop if an error is encountered, errors are saved to error_log if true
+        strict_mode: whether to keep track of spaces, can be important to keep correct spacing for detecting byte information
+        """
         self.lexer = lex.lex(module=self, debug=False)
         self.parser = yacc.yacc(
             module=self, debug=False, outputdir=tempfile.gettempdir()
@@ -122,7 +129,7 @@ class SnortParser:
         rule += ")"
         return rule
 
-    def __lex_string(self, input_string: str):
+    def _lex_string(self, input_string: str):
         self.lexer.input(input_string)
         while True:
             tok = self.lexer.token()
@@ -174,6 +181,7 @@ class SnortParser:
         "QUESTION",
         "PLUS",
         "MODULO",
+        "SPACE"
     ]
 
     reserved = {
@@ -213,9 +221,10 @@ class SnortParser:
     t_QUESTION = r"\?"
     t_PLUS = r"\+"
     t_MODULO = r"\%"
+    t_SPACE = r"\ "
 
-    # A string containing ignored characters (spaces and tabs)
-    t_ignore = " \t"
+    # A string containing ignored characters (tabs)
+    t_ignore = "\t"
 
     # Define a rule so we can track line numbers
     @staticmethod
@@ -251,7 +260,7 @@ class SnortParser:
             |cip_service|cip_status|enip_command|enip_req|enip_rsp|iec104_apci_type|\
             |iec104_asdu_func|modbus_data|modbus_func|modbus_unit|s7commplus_content|\
             |s7commplus_func|s7commplus_opcode|fragoffset|ttl|tos|id|ipopts|fragbits|\
-            |ip_proto|flags|flow|flowbits|file_type|seq|ack|window|itype|icode|icmp_id|\
+            |ip_proto|flags|flowbits|flow|file_type|seq|ack|window|itype|icode|icmp_id|\
             |icmp_seq|rpc|stream_reassemble|stream_size|detection_filter|replace|tag|\
             |offset|depth|within|distance|filename|charset|nocase|fast_pattern|protected_content)"
         return t
@@ -295,17 +304,18 @@ class SnortParser:
             p[0] = p[1]
 
     def p_rule(self, p: YaccProduction):
-        """rule : ACTION PROTOCOL ip port DIRECTION ip port LPAREN body RPAREN"""
+        """rule : ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN body RPAREN"""
         p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9] + p[10]
+        
         snort_rule = SnortRule(
             action=p[1],
-            protocol=p[2],
-            source_ip=p[3],
-            source_port=p[4],
-            direction=p[5],
-            dest_ip=p[6],
-            dest_port=p[7],
-            body_string=p[9],
+            protocol=p[3],
+            source_ip=p[5],
+            source_port=p[7],
+            direction=p[9],
+            dest_ip=p[11],
+            dest_port=p[13],
+            body_string=p[16],
             body_options=self.body_options,
         )
 
@@ -322,7 +332,14 @@ class SnortParser:
 
     def p_option(self, p: YaccProduction):
         """option : OPTION COLON expression SEMICOLON
-        | OPTION SEMICOLON"""
+        | OPTION SEMICOLON
+        | OPTION COLON expression SEMICOLON SPACE"""
+        if len(p) == 6:
+            p[0] = p[1] + p[2] + p[3] + p[4]
+            option_kvp = {p[1]: p[3]}
+            self.body_options.append(option_kvp)
+            self.body_string = ""
+            self.options += p[0]
         if len(p) == 5:
             p[0] = p[1] + p[2] + p[3] + p[4]
             option_kvp = {p[1]: p[3]}
@@ -339,7 +356,9 @@ class SnortParser:
     def p_expression(self, p: YaccProduction):
         """expression : expression term
         | term"""
+        
         p[0] = self.body_string
+        
 
     def p_term(self, p: YaccProduction):
         # matches all the text between : ; for an option
@@ -373,7 +392,8 @@ class SnortParser:
         | QUESTION
         | PLUS
         | MODULO
-        | BSLASH SEMICOLON"""
+        | BSLASH SEMICOLON
+        | SPACE"""
         if len(p) == 3:
             p[0] = p[1] + p[2]
             self.body_string += p[0]
