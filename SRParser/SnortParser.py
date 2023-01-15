@@ -30,9 +30,9 @@ class SnortRule:
         self.dest_port = dest_port
         self.body_string = body_string
         self.body_options = body_options
-        self.raw = ""
+        self.raw_text = ""
 
-    def raw_text(self):
+    def rebuild_rule(self):
         """Take a SnortRule object and rebuild the raw text version."""
         rule = (
             self.action
@@ -65,14 +65,14 @@ class SnortParser:
     def __init__(self, console_logging=False, skip_error_rules=True, strict_mode=True):
         """
         Initialize parser.
-        Optional args -\n
-        console_logging: print logging information to console\n
+        Optional args -
+        console_logging: print logging information to console
         skip_error_rules: whether to stop if an error is encountered, errors are saved to error_log if true
         strict_mode: whether to keep track of spaces, can be important to keep correct spacing for detecting byte information
         """
         self.lexer = lex.lex(module=self, debug=False)
         self.parser = yacc.yacc(
-            module=self, debug=False, outputdir=tempfile.gettempdir()
+            module=self, debug=True, outputdir=tempfile.gettempdir()
         )
         self.options = ""
         self.body_string = ""
@@ -181,7 +181,12 @@ class SnortParser:
         "QUESTION",
         "PLUS",
         "MODULO",
-        "SPACE"
+        "SPACE",
+        "AT",
+        "POUND",
+        "TILDE",
+        "APOSTROPHE",
+        "BACKTICK"
     ]
 
     reserved = {
@@ -189,7 +194,17 @@ class SnortParser:
         "EXTERNAL_NET": "EXTERNAL_NET",
         "HOME_NET": "HOME_NET",
         "HTTP_PORTS": "HTTP_PORTS",
-        "SMTP_SERVERS": "SMTP_SERVERS"
+        "SMTP_SERVERS": "SMTP_SERVERS",
+        "TELNET_SERVERS": "TELNET_SERVERS",
+        "HTTP_SERVERS": "HTTP_SERVERS",
+        "HTTP_PORTS": "HTTP_PORTS",
+        "FTP_PORTS": "FTP_PORTS",
+        "FILE_DATA_PORTS": "FILE_DATA_PORTS",
+        "SQL_SERVERS": "SQL_SERVERS",
+        "ORACLE_PORTS": "ORACLE_PORTS",
+        "SIP_SERVERS": "SIP_SERVERS",
+        "SSH_PORTS": "SSH_PORTS",
+        "SIP_PORTS": "SIP_PORTS"
     }
 
     tokens = tokens + list(reserved.values())
@@ -223,6 +238,11 @@ class SnortParser:
     t_PLUS = r"\+"
     t_MODULO = r"\%"
     t_SPACE = r"\ "
+    t_POUND = r"\#"
+    t_AT = r"\@"
+    t_BACKTICK = r"\`"
+    t_APOSTROPHE = r"\'"
+    t_TILDE = r"\~"
 
     # A string containing ignored characters (tabs)
     t_ignore = "\t"
@@ -259,7 +279,9 @@ class SnortParser:
             |ip_proto|flags|flowbits|flow|file_type|seq|ack|window|itype|icode|icmp_id|\
             |icmp_seq|rpc|stream_reassemble|stream_size|detection_filter|replace|tag|\
             |offset|depth|within|distance|filename|charset|nocase|fast_pattern|protected_content|\
-            |ip_proto|byte_jump)"
+            |ip_proto|byte_jump|uricontent|http_uri|raw_http_uri|http_client_body|http_raw_body|\
+            |http_cookie|http_raw_cookie|http_method|http_raw_header|http_header|http_raw_uri|\
+            |http_stat_code|http_stat_msg)"
         return t
 
     @staticmethod
@@ -308,8 +330,30 @@ class SnortParser:
 
     def p_rule(self, p: YaccProduction):
         """rule : ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN body RPAREN
+                | ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN SPACE body RPAREN
+                | ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN body SPACE RPAREN
                 | ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN SPACE body SPACE RPAREN"""
         if len(p) == 20:
+            p[0] = p[1] + p[3] + p[5] + p[7] + p[9] + p[11] + p[13] + p[15] + p[17] + p[19]
+            snort_rule = SnortRule(
+                action=p[1],
+                protocol=p[3],
+                source_ip=p[5],
+                source_port=p[7],
+                direction=p[9],
+                dest_ip=p[11],
+                dest_port=p[13],
+                body_string=p[18],
+                body_options=self.body_options,
+            )
+
+            logger.info(f"Rule matched: {snort_rule.__dict__}")
+            self.rules.append(snort_rule)
+            self.options = ""
+            self.body_string = ""
+            self.body_options = list()
+        if len(p) == 19:
+            p[0] = p[1] + p[3] + p[5] + p[7] + p[9] + p[11] + p[13] + p[15] + p[17] + p[18]
             snort_rule = SnortRule(
                 action=p[1],
                 protocol=p[3],
@@ -328,6 +372,7 @@ class SnortParser:
             self.body_string = ""
             self.body_options = list()
         if len(p) == 18:
+            p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9] + p[10]
             snort_rule = SnortRule(
                 action=p[1],
                 protocol=p[3],
@@ -417,10 +462,15 @@ class SnortParser:
         | STAR
         | CARET
         | AND
+        | AT
+        | POUND
+        | TILDE
         | QUESTION
         | PLUS
         | MODULO
         | BSLASH SEMICOLON
+        | BACKTICK
+        | APOSTROPHE
         | SPACE"""
         if len(p) == 3:
             p[0] = p[1] + p[2]
@@ -437,7 +487,11 @@ class SnortParser:
         | DOLLAR HOME_NET
         | DOLLAR EXTERNAL_NET
         | DOLLAR SMTP_SERVERS
-        | LBRACK list RBRACK"""
+        | DOLLAR TELNET_SERVERS
+        | DOLLAR HTTP_SERVERS
+        | LBRACK list RBRACK
+        | DOLLAR SQL_SERVERS
+        | DOLLAR SIP_SERVERS"""
 
         if len(p) == 4:
             p[0] = p[1] + p[2] + p[3]
@@ -459,7 +513,12 @@ class SnortParser:
         | EXCLAMATION COLON NUMBER
         | EXCLAMATION NUMBER COLON
         | LBRACK list RBRACK
-        | DOLLAR HTTP_PORTS"""
+        | DOLLAR HTTP_PORTS
+        | DOLLAR FILE_DATA_PORTS
+        | DOLLAR FTP_PORTS
+        | DOLLAR ORACLE_PORTS
+        | DOLLAR SSH_PORTS
+        | DOLLAR SIP_PORTS"""
         if len(p) == 5:
             p[0] = p[1] + p[2] + p[3] + p[4]
             return p[0]
