@@ -71,8 +71,9 @@ class SnortParser:
         strict_mode: whether to keep track of spaces, can be important to keep correct spacing for detecting byte information
         """
         self.lexer = lex.lex(module=self, debug=False)
+        #outputdir=tempfile.gettempdir()
         self.parser = yacc.yacc(
-            module=self, debug=True, outputdir=tempfile.gettempdir()
+            module=self, debug=True
         )
         self.options = ""
         self.body_string = ""
@@ -471,7 +472,9 @@ class SnortParser:
         | BSLASH SEMICOLON
         | BACKTICK
         | APOSTROPHE
-        | SPACE"""
+        | SPACE
+        | DIRECTION
+        | IP"""
         if len(p) == 3:
             p[0] = p[1] + p[2]
             self.body_string += p[0]
@@ -541,13 +544,9 @@ class SnortParser:
 
     @staticmethod
     def p_item(p: YaccProduction):
-        """item : IP
-        | COMMA
-        | NUMBER
-        | SLASH
-        | COLON
-        | DOLLAR
-        | ID"""
+        """item : port
+        | ip
+        | COMMA"""
         p[0] = p[1]
 
     # Error rule for syntax errors
