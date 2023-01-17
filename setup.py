@@ -10,7 +10,7 @@ def read(fname):
 
 setup(
     name = "SRParser",
-    version = "0.0.1",
+    version = "0.0.2",
     author = "Joshua Brawner",
     author_email = "jrbbrawner@gmail.com",
     description = ("Parse and easily work with Snort rules."),
