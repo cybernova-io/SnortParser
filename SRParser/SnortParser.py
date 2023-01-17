@@ -13,14 +13,15 @@ class SnortRule:
         self,
         action,
         protocol,
-        source_ip,
-        source_port,
-        direction,
-        dest_ip,
-        dest_port,
-        body_string,
         body_options,
-    ):
+        source_ip=None,
+        source_port=None,
+        direction=None,
+        dest_ip=None,
+        dest_port=None,
+        body_string=None
+        ):
+        """Class representing a snort rule. Service rules use less parameters than normal rules."""
         self.action = action
         self.protocol = protocol
         self.source_ip = source_ip
@@ -156,6 +157,7 @@ class SnortParser:
         "DIRECTION",
         "ID",
         "OPTION",
+        "SERVICE",
         "LPAREN",
         "RPAREN",
         "COLON",
@@ -265,6 +267,7 @@ class SnortParser:
         r"(alert|block|drop|log|pass|react|reject|rewrite)"
         return t
 
+    
     @staticmethod
     def t_OPTION(t: LexToken):
         r"(msg|reference|gid|sid|rev|classtype|priority|metadata|service|rem|file_meta|\
@@ -283,6 +286,11 @@ class SnortParser:
             |ip_proto|byte_jump|uricontent|http_uri|raw_http_uri|http_client_body|http_raw_body|\
             |http_cookie|http_raw_cookie|http_method|http_raw_header|http_header|http_raw_uri|\
             |http_stat_code|http_stat_msg)"
+        return t
+
+    @staticmethod
+    def t_SERVICE(t: LexToken):
+        r"(ssl|http)"
         return t
 
     @staticmethod
@@ -333,7 +341,9 @@ class SnortParser:
         """rule : ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN body RPAREN
                 | ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN SPACE body RPAREN
                 | ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN body SPACE RPAREN
-                | ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN SPACE body SPACE RPAREN"""
+                | ACTION SPACE PROTOCOL SPACE ip SPACE port SPACE DIRECTION SPACE ip SPACE port SPACE LPAREN SPACE body SPACE RPAREN
+                | ACTION SPACE SERVICE SPACE LPAREN SPACE body SPACE RPAREN
+                | ACTION SPACE SERVICE SPACE LPAREN SPACE body RPAREN"""
         if len(p) == 20:
             p[0] = p[1] + p[3] + p[5] + p[7] + p[9] + p[11] + p[13] + p[15] + p[17] + p[19]
             snort_rule = SnortRule(
@@ -392,9 +402,37 @@ class SnortParser:
             self.body_string = ""
             self.body_options = list()
 
+        if len(p) == 10:
+            p[0] = p[1] + p[3] + p[5] + p[7] + p[9]
+            snort_rule = SnortRule(
+                action=p[1],
+                protocol=p[3],
+                body_options=self.body_options,
+            )
+
+            logger.info(f"Rule matched: {snort_rule.__dict__}")
+            self.rules.append(snort_rule)
+            self.options = ""
+            self.body_string = ""
+            self.body_options = list()
+
+        if len(p) == 9:
+            p[0] = p[1] + p[3] + p[5] + p[7] + p[8]
+            snort_rule = SnortRule(
+                action=p[1],
+                protocol=p[3],
+                body_options=self.body_options,
+            )
+
+            logger.info(f"Rule matched: {snort_rule.__dict__}")
+            self.rules.append(snort_rule)
+            self.options = ""
+            self.body_string = ""
+            self.body_options = list()
+
     def p_body(self, p: YaccProduction):
         """body : body option
-        | option"""
+                | option"""
         p[0] = self.options
 
     def p_option(self, p: YaccProduction):
@@ -439,6 +477,7 @@ class SnortParser:
         """term : ID
         | OPTION
         | ACTION
+        | SERVICE
         | PROTOCOL
         | PIPE
         | NUMBER
