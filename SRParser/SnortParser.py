@@ -13,7 +13,6 @@ class SnortRule:
         self,
         action,
         protocol,
-        body_string,
         body_options,
         source_ip=None,
         source_port=None,
@@ -29,7 +28,6 @@ class SnortRule:
         self.direction = direction
         self.dest_ip = dest_ip
         self.dest_port = dest_port
-        self.body_string = body_string
         self.body_options = body_options
         self.raw_text = ""
 
@@ -366,14 +364,12 @@ class SnortParser:
                 direction=p[9],
                 dest_ip=p[11],
                 dest_port=p[13],
-                body_string=p[18],
                 body_options=self.body_options,
             )
 
             logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
-            self.body_string = ""
             self.body_options = list()
         if len(p) == 19:
             p[0] = (
@@ -387,14 +383,12 @@ class SnortParser:
                 direction=p[9],
                 dest_ip=p[11],
                 dest_port=p[13],
-                body_string=p[18],
                 body_options=self.body_options,
             )
 
             logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
-            self.body_string = ""
             self.body_options = list()
         if len(p) == 18:
             p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9] + p[10]
@@ -406,14 +400,12 @@ class SnortParser:
                 direction=p[9],
                 dest_ip=p[11],
                 dest_port=p[13],
-                body_string=p[16],
                 body_options=self.body_options,
             )
 
             logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
-            self.body_string = ""
             self.body_options = list()
 
         if len(p) == 10:
@@ -421,14 +413,12 @@ class SnortParser:
             snort_rule = SnortRule(
                 action=p[1],
                 protocol=p[3],
-                body_string=p[8],
                 body_options=self.body_options,
             )
 
             logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
-            self.body_string = ""
             self.body_options = list()
 
         if len(p) == 9:
@@ -436,14 +426,12 @@ class SnortParser:
             snort_rule = SnortRule(
                 action=p[1],
                 protocol=p[3],
-                body_string=p[8],
                 body_options=self.body_options,
             )
 
             logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
-            self.body_string = ""
             self.body_options = list()
 
     def p_body(self, p: YaccProduction):
