@@ -74,13 +74,12 @@ class SnortRule:
 
 
 class SnortParser:
-    def __init__(self, console_logging=False, skip_error_rules=True, strict_mode=True):
+    def __init__(self, console_logging=False, skip_error_rules=True):
         """
         Initialize parser.
         Optional args -
         console_logging: print logging information to console
         skip_error_rules: whether to stop if an error is encountered, errors are saved to error_log if true
-        strict_mode: whether to keep track of spaces, can be important to keep correct spacing for detecting byte information
         """
         self.lexer = lex.lex(module=self, debug=False)
         self.parser = yacc.yacc(
