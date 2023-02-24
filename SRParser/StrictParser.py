@@ -237,7 +237,6 @@ class StrictParser:
     t_QUESTION = r"\?"
     t_PLUS = r"\+"
     t_MODULO = r"\%"
-    t_SPACE = r"\ "
     t_POUND = r"\#"
     t_AT = r"\@"
     t_BACKTICK = r"\`"
@@ -278,11 +277,16 @@ class StrictParser:
             |s7commplus_func|s7commplus_opcode|fragoffset|ttl|tos|id|ipopts|fragbits|\
             |ip_proto|flags|flowbits|flow|file_type|seq|ack|window|itype|icode|icmp_id|\
             |icmp_seq|rpc|stream_reassemble|stream_size|detection_filter|replace|tag|\
-            |offset|depth|within|distance|filename|charset|nocase|fast_pattern|protected_content|\
-            |ip_proto|byte_jump|uricontent|http_uri|raw_http_uri|http_client_body|http_raw_body|\
+            |filename|charset|protected_content|ip_proto|byte_jump|uricontent|http_uri|\
+            |raw_http_uri|http_client_body|http_raw_body|\
             |http_cookie|http_raw_cookie|http_method|http_raw_header|http_header|http_raw_uri|\
             |http_stat_code|http_stat_msg)"
         return t
+    
+    #@staticmethod
+    #def t_CONTENT_MODIFIER(t: LexToken):
+    #    r"(fast_pattern|nocase|offset|depth|distance|within|)"
+    #    return t
 
     @staticmethod
     def t_SERVICE(t: LexToken):
@@ -301,12 +305,12 @@ class StrictParser:
 
     @staticmethod
     def t_NUMBER(t: LexToken):
-        r"[\s]*\d+[\s*]"
+        r"\d+\s*"
         #r"\d+(\.\d+)?|0x\d+"
         return t
 
     def t_ID(self, t: LexToken):
-        r"[\s]*[a-zA-Z_][a-zA-Z_0-9.]*[\s]*"
+        r"\s*[a-zA-Z_][a-zA-Z_0-9.]*\s*"
         #r"[a-zA-Z_][a-zA-Z_0-9.]*"
         t.type = self.reserved.get(t.value.strip(), "ID")
         return t
@@ -384,9 +388,9 @@ class StrictParser:
 
     def p_expression(self, p: YaccProduction):
         """expression : expression term
-        | term"""
-
+                      | term"""
         p[0] = self.body_string
+        
 
     def p_term(self, p: YaccProduction):
         # matches all the text between : ; for an option
@@ -427,7 +431,6 @@ class StrictParser:
         | BSLASH SEMICOLON
         | BACKTICK
         | APOSTROPHE
-        | SPACE
         | DIRECTION
         | IP"""
         if len(p) == 3:
@@ -436,7 +439,7 @@ class StrictParser:
         else:
             p[0] = p[1]
             self.body_string += p[0]
-
+        print(p[0])
     @staticmethod
     def p_ip(p: YaccProduction):
         """ip : IP
