@@ -1,41 +1,35 @@
 import pytest
 from SRParser import SnortParser
-from SRParser import SnortRule
+import re
 
 @pytest.fixture()
-def parser():
-    parser = SnortParser()
-    return parser
-
-@pytest.fixture()
-def parsed_rule(parser: SnortParser):
-    test_rule = '''alert tcp $EXTERNAL_NET any -> $HOME_NET 20034 (msg:"BACKDOOR NetBus Pro 2.0 connection request"; flow:to_server,established; content:"BN|20 00 02 00|"; depth:6; content:"|05 00|"; offset:8; depth:2; flowbits:set,backdoor.netbus_2.connect; flowbits:noalert; classtype:misc-activity; sid:3009; rev:1;)'''
-    rules = parser.parse_rules(test_rule)
+def parsed_rule():
+    rule = """alert tcp $HTTP_SERVERS $HTTP_PORTS -> $EXTERNAL_NET any ( msg:"INDICATOR-COMPROMISE file copied ok"; flow:to_client,established; file_data; content:"1 file|28|s|29| copied",fast_pattern,nocase; metadata:policy max-detect-ips drop,ruleset community; service:http; reference:bugtraq,1806; reference:cve,2000-0884; classtype:bad-unknown; sid:497; rev:21; )"""
+    parser = SnortParser(skip_error_rules=False)
+    rules = parser.parse_rules(rule)
     return rules[0]
 
 def test_rule_action(parsed_rule):
     assert parsed_rule.action == 'alert'
 
-def test_rule_protocol(parsed_rule):
-    assert parsed_rule.protocol == 'tcp'
-
-def test_rule_source_ip(parsed_rule):
-    assert parsed_rule.source_ip == '$EXTERNAL_NET'
-
-def test_rule_ports(parsed_rule):
-    assert parsed_rule.source_port == 'any'
-
-def test_rule_direction(parsed_rule):
-    assert parsed_rule.direction == '->'
-
-def test_rule_dest_ip(parsed_rule):
-    assert parsed_rule.dest_ip == '$HOME_NET'
-
-def test_rule_dest_port(parsed_rule):
-    assert parsed_rule.dest_port == '20034'
-
 def test_rule_body_options(parsed_rule):
-    test_list = [{'msg': '"BACKDOOR NetBus Pro 2.0 connection request"'}, {'flow': 'to_server,established'}, {'content': '"BN|20 00 02 00|"'}, {'depth': '6'}, {'content': '"|05 00|"'}, {'offset': '8'}, {'depth': '2'}, {'flowbits': 'set,backdoor.netbus_2.connect'}, {'flowbits': 'noalert'}, {'classtype': 'misc-activity'}, {'sid': '3009'}, {'rev': '1'}]
+    test_list = [{'msg': '"INDICATOR-COMPROMISE file copied ok"'}, {'flow': 'to_client,established'}, {'file_data': ';'}, {'content': '"1 file|28|s|29| copied",fast_pattern,nocase'}, {'metadata': 'policy max-detect-ips drop,ruleset community'}, {'service': 'http'}, {'reference': 'bugtraq,1806'}, {'reference': 'cve,2000-0884'}, {'classtype': 'bad-unknown'}, {'sid': '497'}, {'rev': '21'}]
     for idx, item in enumerate(parsed_rule.body_options):
         assert item == test_list[idx]
+
+def test_vs_community_ruleset():
+    contents = open('snort3-community.txt').readlines()
+    for rule in contents:
+        parser = SnortParser(skip_error_rules=False)
+        parsed_rule = parser.parse_rules(rule)[0]
+        assert re.sub('\s', '', parsed_rule.raw_text) == re.sub('\s', '', rule)
+               
+def test_vs_community_ruleset_strict():
+    contents = open('snort3-community.txt').readlines()
+    for rule in contents:
+        parser = SnortParser(skip_error_rules=False)
+        parsed_rule = parser.parse_rules(rule)[0]
+        assert parsed_rule.raw_text.strip() == rule.strip()
+              
+   
     
