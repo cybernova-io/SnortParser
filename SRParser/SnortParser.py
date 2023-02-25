@@ -4,8 +4,7 @@ from ply.yacc import YaccProduction
 from ply.lex import LexToken
 import tempfile
 import logging
-
-logger = logging.getLogger(__name__)
+import copy
 
 
 class SnortRule:
@@ -14,6 +13,7 @@ class SnortRule:
         action,
         protocol,
         body_options,
+        raw_text,
         source_ip=None,
         source_port=None,
         direction=None,
@@ -29,56 +29,19 @@ class SnortRule:
         self.dest_ip = dest_ip
         self.dest_port = dest_port
         self.body_options = body_options
-        self.raw_text = ""
+        self.raw_text = raw_text
 
         if source_ip == None:
             self.service_rule = True
         else:
             self.service_rule = False
 
-    def rebuild_rule(self):
-        """Take a SnortRule object and rebuild the raw text version."""
-        if self.service_rule == False:
-            rule = (
-                self.action
-                + " "
-                + self.protocol
-                + " "
-                + self.source_ip
-                + " "
-                + self.source_port
-                + " "
-                + self.direction
-                + " "
-                + self.dest_ip
-                + " "
-                + self.dest_port
-                + " ( "
-            )
-        if self.service_rule == True:
-            rule = self.action + " " + self.protocol + " ( "
-
-        for option in self.body_options:
-            rule += str(*option)
-            opt = option.pop(*option)
-            if opt == " ":
-                rule += "; "
-            else:
-                rule += ":"
-                rule += opt
-                rule += ";" + " "
-        rule = rule[:-1]
-        rule += " )"
-        self.raw_text = rule
-        return self.raw_text
-
 
 class SnortParser:
-    def __init__(self, console_logging=False, skip_error_rules=True):
+    def __init__(self, skip_error_rules=True):
         """
         Initialize parser.
         Optional args -
-        console_logging: print logging information to console
         skip_error_rules: whether to stop if an error is encountered, errors are saved to error_log if true
         """
         self.lexer = lex.lex(module=self, debug=False)
@@ -94,9 +57,6 @@ class SnortParser:
         self.error_log = list()
         self.skip_error_rules = skip_error_rules
 
-        if console_logging:
-            self._set_logging()
-
     def parse_rules(self, input_string: str):
         """Parse an input string expected to contain snort rules."""
         self.parser.parse(input_string, lexer=self.lexer)
@@ -106,56 +66,62 @@ class SnortParser:
         self,
         action: str,
         protocol: str,
-        source_ip: str,
-        source_port: str,
-        direction: str,
-        dest_ip: str,
-        dest_port: str,
         body_options: list,
+        source_ip: str | None = None,
+        source_port: str | None = None,
+        direction: str | None = None,
+        dest_ip: str | None = None,
+        dest_port: str | None = None
     ):
         """Take components of a snort rule and rebuild it into the raw text."""
-        rule = ""
-        rule = (
-            action
-            + " "
-            + protocol
-            + " "
-            + source_ip
-            + " "
-            + source_port
-            + " "
-            + direction
-            + " "
-            + dest_ip
-            + " "
-            + dest_port
-            + " ("
-        )
+        
+        if source_ip == None:
+            service_rule = True
+        else:
+            service_rule = False
+
+        if service_rule == False:
+            rule = ""
+            rule = (
+                action
+                + " "
+                + protocol
+                + " "
+                + source_ip
+                + " "
+                + source_port
+                + " "
+                + direction
+                + " "
+                + dest_ip
+                + " "
+                + dest_port
+                + " ( "
+            )
+
+        if service_rule == True:
+            rule = action + " " + protocol + " ( "
+
         for option in body_options:
             rule += str(*option)
-            rule += ":"
-            rule += option.pop(*option)
-            rule += ";" + " "
+            opt = option.pop(*option)
+            if opt == ";":
+                rule += "; "
+            else:
+                rule += ":"
+                rule += opt
+                rule += ";" + " "
         rule = rule[:-1]
-        rule += ")"
+        rule += " )"
         return rule
 
-    def _lex_string(self, input_string: str):
+    def lex_string(self, input_string: str):
         self.lexer.input(input_string)
         while True:
             tok = self.lexer.token()
             if not tok:
                 break
             print(tok)
-
-    @staticmethod
-    def __set_logging():
-        """Set the console logger only if handler(s) aren't already set."""
-        if not len(logger.handlers):
-            logger.setLevel(logging.DEBUG)
-            log = logging.StreamHandler()
-            log.setLevel(logging.DEBUG)
-            logger.addHandler(log)
 
     # List of token names. This is always required
     tokens = [
@@ -166,6 +132,7 @@ class SnortParser:
         "DIRECTION",
         "ID",
         "OPTION",
+        "CONTENT_MODIFIER",
         "SERVICE",
         "LPAREN",
         "RPAREN",
@@ -279,21 +246,25 @@ class SnortParser:
     @staticmethod
     def t_OPTION(t: LexToken):
         r"(msg|reference|gid|sid|rev|classtype|priority|metadata|service|rem|file_meta|\
-            |content|bufferlen|isdataat|dsize|pcre|regex|pkt_data|raw_data|file_data|\
-            |js_data|base64_decode|base64_data|byte_extract|byte_test|byte_math|ber_data|\
-            |ber_skip|ssl_state|ssl_version|dce_iface|dce_opnum|dce_stub_data|sip_method|\
+            |content|bufferlen|isdataat|dsize|pcre|regex|base64_decode|byte_extract|byte_test|byte_math|ber_data|\
+            |ber_skip|ssl_state|ssl_version|dce_iface|dce_opnum|sip_method|\
             |sip_method|sip_header|sip_body|sip_stat_code|sd_pattern|asn1|cvs|md5|sha256|\
-            |sha512|gtp_info|gtp_type|gtp_version|dnp3_func|dnp3_ind|dnp3_obj|dnp3_data|\
+            |sha512|gtp_info|gtp_type|gtp_version|dnp3_func|dnp3_ind|dnp3_obj|\
             |cip_attribute|cip_class|cip_conn_path_class|cip_instance|cip_req|cip_rsp|\
             |cip_service|cip_status|enip_command|enip_req|enip_rsp|iec104_apci_type|\
-            |iec104_asdu_func|modbus_data|modbus_func|modbus_unit|s7commplus_content|\
+            |iec104_asdu_func|modbus_func|modbus_unit|s7commplus_content|\
             |s7commplus_func|s7commplus_opcode|fragoffset|ttl|tos|id|ipopts|fragbits|\
             |ip_proto|flags|flowbits|flow|file_type|seq|ack|window|itype|icode|icmp_id|\
             |icmp_seq|rpc|stream_reassemble|stream_size|detection_filter|replace|tag|\
-            |offset|depth|within|distance|filename|charset|nocase|fast_pattern|protected_content|\
-            |ip_proto|byte_jump|uricontent|http_uri|raw_http_uri|http_client_body|http_raw_body|\
-            |http_cookie|http_raw_cookie|http_method|http_raw_header|http_header|http_raw_uri|\
-            |http_stat_code|http_stat_msg)"
+            |filename|charset|protected_content|ip_proto|byte_jump|uricontent|http_uri|\
+            |raw_http_uri|http_client_body|http_raw_body|http_cookie|http_raw_cookie|http_method|\
+            |http_raw_header|http_header|http_raw_uri|http_stat_code|http_stat_msg)"
+        return t
+
+    @staticmethod
+    def t_CONTENT_MODIFIER(t: LexToken):
+        r"(fast_pattern|nocase|raw_data|file_data|pkt_data|\
+           |js_data|vba_data|base64_data|dce_stub_data|dnp3_data|modbus data)"
         return t
 
     @staticmethod
@@ -353,7 +324,25 @@ class SnortParser:
         | ACTION SPACE SERVICE SPACE LPAREN SPACE body RPAREN"""
         if len(p) == 20:
             p[0] = (
-                p[1] + p[3] + p[5] + p[7] + p[9] + p[11] + p[13] + p[15] + p[17] + p[19]
+                p[1]
+                + p[2]
+                + p[3]
+                + p[4]
+                + p[5]
+                + p[6]
+                + p[7]
+                + p[8]
+                + p[9]
+                + p[10]
+                + p[11]
+                + p[12]
+                + p[13]
+                + p[14]
+                + p[15]
+                + p[16]
+                + p[17]
+                + p[18]
+                + p[19]
             )
             snort_rule = SnortRule(
                 action=p[1],
@@ -364,15 +353,32 @@ class SnortParser:
                 dest_ip=p[11],
                 dest_port=p[13],
                 body_options=self.body_options,
+                raw_text=p[0],
             )
 
-            logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
             self.body_options = list()
         if len(p) == 19:
             p[0] = (
-                p[1] + p[3] + p[5] + p[7] + p[9] + p[11] + p[13] + p[15] + p[17] + p[18]
+                p[1]
+                + p[2]
+                + p[3]
+                + p[4]
+                + p[5]
+                + p[6]
+                + p[7]
+                + p[8]
+                + p[9]
+                + p[10]
+                + p[11]
+                + p[12]
+                + p[13]
+                + p[14]
+                + p[15]
+                + p[16]
+                + p[17]
+                + p[18]
             )
             snort_rule = SnortRule(
                 action=p[1],
@@ -383,14 +389,32 @@ class SnortParser:
                 dest_ip=p[11],
                 dest_port=p[13],
                 body_options=self.body_options,
+                raw_text=p[0],
             )
 
-            logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
             self.body_options = list()
         if len(p) == 18:
-            p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9] + p[10]
+            p[0] = (
+                p[1]
+                + p[2]
+                + p[3]
+                + p[4]
+                + p[5]
+                + p[6]
+                + p[7]
+                + p[8]
+                + p[9]
+                + p[10]
+                + p[11]
+                + p[12]
+                + p[13]
+                + p[14]
+                + p[15]
+                + p[16]
+                + p[17]
+            )
             snort_rule = SnortRule(
                 action=p[1],
                 protocol=p[3],
@@ -400,35 +424,35 @@ class SnortParser:
                 dest_ip=p[11],
                 dest_port=p[13],
                 body_options=self.body_options,
+                raw_text=p[0],
             )
 
-            logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
             self.body_options = list()
 
         if len(p) == 10:
-            p[0] = p[1] + p[3] + p[5] + p[7] + p[9]
+            p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9]
             snort_rule = SnortRule(
                 action=p[1],
                 protocol=p[3],
                 body_options=self.body_options,
+                raw_text=p[0],
             )
 
-            logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
             self.body_options = list()
 
         if len(p) == 9:
-            p[0] = p[1] + p[3] + p[5] + p[7] + p[8]
+            p[0] = p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8]
             snort_rule = SnortRule(
                 action=p[1],
                 protocol=p[3],
                 body_options=self.body_options,
+                raw_text=p[0],
             )
 
-            logger.info(f"Rule matched: {snort_rule.__dict__}")
             self.rules.append(snort_rule)
             self.options = ""
             self.body_options = list()
@@ -440,11 +464,12 @@ class SnortParser:
 
     def p_option(self, p: YaccProduction):
         """option : OPTION COLON expression SEMICOLON
-        | OPTION SEMICOLON
         | OPTION COLON expression SEMICOLON SPACE
-        | OPTION SEMICOLON SPACE"""
+        | OPTION SEMICOLON SPACE
+        | CONTENT_MODIFIER SEMICOLON
+        | CONTENT_MODIFIER SEMICOLON SPACE"""
         if len(p) == 6:
-            p[0] = p[1] + p[2] + p[3] + p[4]
+            p[0] = p[1] + p[2] + p[3] + p[4] + p[5]
             option_kvp = {p[1]: p[3]}
             self.body_options.append(option_kvp)
             self.body_string = ""
@@ -457,7 +482,7 @@ class SnortParser:
             self.options += p[0]
         if len(p) == 4:
             p[0] = p[1] + p[2] + p[3]
-            option_kvp = {p[1]: p[3]}
+            option_kvp = {p[1]: p[2]}
             self.body_options.append(option_kvp)
             self.body_string = ""
             self.options += p[0]
@@ -478,6 +503,7 @@ class SnortParser:
         # matches all the text between : ; for an option
         """term : ID
         | OPTION
+        | CONTENT_MODIFIER
         | ACTION
         | SERVICE
         | PROTOCOL
