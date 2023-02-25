@@ -1,5 +1,8 @@
 ## Intro
-Snort rule tokenizer and parser written using PLY. This is my first tokenizer, parser and I may make improvements/changes as time goes on. The focus of this package currently is to allow programmatically working with snort rules, not necessarily detect the minutae of option combinations. If you have any suggestions, ideas, or improvements feel free to open an issue. Inspiration drawn from plyara. Thanks to David Beazley for his work on the PLY package.
+
+Snort rule tokenizer and parser written using PLY. This is my first tokenizer, parser and I may make improvements/changes as time goes on. The focus of this package currently is to allow programmatically working with snort rules, not necessarily detect the minutae of incorrect option combinations.
+
+If you have any suggestions, ideas, or improvements feel free to open an issue. Inspiration drawn from plyara. Thanks to David Beazley for his work on the PLY package.
 
 ## Usage
 
